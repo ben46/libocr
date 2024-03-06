@@ -1,29 +1,27 @@
 # libocr
 
-libocr consists of a Go library and a set of Solidity smart contracts that implement the *Chainlink Offchain Reporting Protocol*, a [Byzantine fault tolerant](https://en.wikipedia.org/wiki/Byzantine_fault) protocol that allows a set of oracles to generate *offchain* an aggregate report of the oracles' observations of some underlying data source. This report is then transmitted to an onchain contract in a single transaction.
+libocr 包括一个 Go 库和一组 Solidity 智能合约，实现了*Chainlink Offchain Reporting Protocol*，这是一个[拜占庭容错](https://en.wikipedia.org/wiki/Byzantine_fault)协议，允许一组 Oracle 在链下生成一个聚合报告，汇总了这些 Oracle 对某个基础数据源的观察。然后将此报告以单个交易的形式传输到链上合约。
 
-You may also be interested in [libocr's integration into the actual Chainlink node](https://github.com/smartcontractkit/chainlink/tree/develop/core/services/offchainreporting).
+您可能也对[将 libocr 集成到实际 Chainlink 节点中](https://github.com/smartcontractkit/chainlink/tree/develop/core/services/offchainreporting)感兴趣。
 
+## 协议描述
 
-## Protocol Description
+协议执行主要在 Chainlink 节点之间的链下点对点网络上进行。节点定期选举一个新的领导节点，领导节点驱动协议的其余部分。该协议设计为公平地选择每个领导者，并且快速地从未能朝着及时提交链上报告的领导者身上转移出来。
 
-Protocol execution mostly happens offchain over a peer to peer network between Chainlink nodes. The nodes regularly elect a new leader node who drives the rest of the protocol. The protocol is designed to choose each leader fairly and quickly rotate away from leaders that aren’t making progress towards timely onchain reports.
+领导者定期请求跟随者提供新签名的观察结果，并将它们聚合成一个报告。然后将聚合报告发送回跟随者，并要求他们通过签名来证明报告的有效性。如果有足够多的跟随者批准了该报告，领导者将组装一个带有该法定人数签名的最终报告，并将其广播给所有跟随者。
 
-The leader regularly requests followers to provide freshly signed observations and aggregates them into a report. It then sends the aggregate report back to the followers and asks them to attest to the report's validity by signing it. If a quorum of followers approves the report, the leader assembles a final report with the quorum's signatures and broadcasts it to all followers.
+然后，节点尝试根据随机的时间表将最终报告传输到智能合约。最后，智能合约验证是否有足够多的节点签署了该报告，并向消费者公开中值。
 
-The nodes then attempt to transmit the final report to the smart contract according to a randomized schedule. Finally, the smart contract verifies that a quorum of nodes signed the report and exposes the median value to consumers.
-
-
-## Organization
+## 组织
 ```
 .
-├── contract: Ethereum smart contracts
-├── gethwrappers: go-ethereum bindings for the OCR1 contracts, generated with abigen
-├── gethwrappers2: go-ethereum bindings for the OCR2 contracts, generated with abigen
-├── networking: p2p networking layer
-├── offchainreporting: offchain reporting protocol version 1
-├── offchainreporting2: offchain reporting protocol version 2 specific packages, not much here
-├── offchainreporting2plus: offchain reporting protocol version 2 and beyond
-├── permutation: helper package for generating permutations
-└── subprocesses: helper package for managing go routines
+├── contract：以太坊智能合约
+├── gethwrappers：OCR1 合约的 go-ethereum 绑定，使用 abigen 生成
+├── gethwrappers2：OCR2 合约的 go-ethereum 绑定，使用 abigen 生成
+├── networking：点对点网络层
+├── offchainreporting：链下报告协议版本 1
+├── offchainreporting2：链下报告协议版本 2 的特定包，这里没有太多内容
+├── offchainreporting2plus：链下报告协议版本 2 及更高版本
+├── permutation：用于生成排列的辅助包
+└── subprocesses：用于管理 go 协程的辅助包
 ```
