@@ -10,11 +10,9 @@ import (
 	"github.com/smartcontractkit/libocr/subprocesses"
 )
 
-// RunManagedBootstrapNode runs a "managed" bootstrap node. It handles
-// configuration updates on the contract.
+// RunManagedBootstrapNode 运行一个"托管"的引导节点。它处理合同上的配置更新。
 func RunManagedBootstrapNode(
 	ctx context.Context,
-
 	bootstrapperFactory types.BootstrapperFactory,
 	v2bootstrappers []commontypes.BootstrapperLocator,
 	contractConfigTracker types.ContractConfigTracker,
@@ -23,8 +21,7 @@ func RunManagedBootstrapNode(
 	logger loghelper.LoggerWithContext,
 ) {
 	mb := managedBootstrapNodeState{
-		ctx: ctx,
-
+		ctx:                 ctx,
 		bootstrapperFactory: bootstrapperFactory,
 		v2bootstrappers:     v2bootstrappers,
 		configTracker:       contractConfigTracker,
@@ -36,24 +33,21 @@ func RunManagedBootstrapNode(
 }
 
 type managedBootstrapNodeState struct {
-	ctx context.Context
-
+	ctx                 context.Context
 	v2bootstrappers     []commontypes.BootstrapperLocator
 	bootstrapperFactory types.BootstrapperFactory
 	configTracker       types.ContractConfigTracker
 	database            types.Database
 	localConfig         types.LocalConfig
 	logger              loghelper.LoggerWithContext
-
-	bootstrapper commontypes.Bootstrapper
-	config       config.PublicConfig
+	bootstrapper        commontypes.Bootstrapper
+	config              config.PublicConfig
 }
 
 func (mb *managedBootstrapNodeState) run() {
 	var subprocesses subprocesses.Subprocesses
 
-	// Restore config from database, so that we can run even if the ethereum node
-	// isn't working.
+	// 从数据库恢复配置，以便即使以太坊节点不工作，我们也可以运行。
 	{
 		var cc *types.ContractConfig
 		ok := subprocesses.BlockForAtMost(
@@ -64,7 +58,7 @@ func (mb *managedBootstrapNodeState) run() {
 			},
 		)
 		if !ok {
-			mb.logger.Error("ManagedBootstrapNode: database timed out while attempting to restore configuration", commontypes.LogFields{
+			mb.logger.Error("ManagedBootstrapNode: 尝试恢复配置时数据库超时", commontypes.LogFields{
 				"timeout": mb.localConfig.DatabaseTimeout,
 			})
 		} else if cc != nil {
@@ -80,16 +74,16 @@ func (mb *managedBootstrapNodeState) run() {
 	for {
 		select {
 		case cc := <-chNewConfig:
-			mb.logger.Info("ManagedBootstrapNode: Switching between configs", commontypes.LogFields{
+			mb.logger.Info("ManagedBootstrapNode: 切换配置", commontypes.LogFields{
 				"oldConfigDigest": mb.config.ConfigDigest.Hex(),
 				"newConfigDigest": cc.ConfigDigest.Hex(),
 			})
 			mb.configChanged(cc)
 		case <-mb.ctx.Done():
-			mb.logger.Debug("ManagedBootstrapNode: winding down ", nil)
+			mb.logger.Debug("ManagedBootstrapNode: 正在关闭", nil)
 			mb.closeBootstrapper()
 			subprocesses.Wait()
-			mb.logger.Debug("ManagedBootstrapNode: exiting", nil)
+			mb.logger.Debug("ManagedBootstrapNode: 退出", nil)
 			return
 		}
 	}
@@ -98,9 +92,9 @@ func (mb *managedBootstrapNodeState) run() {
 func (mb *managedBootstrapNodeState) closeBootstrapper() {
 	if mb.bootstrapper != nil {
 		err := mb.bootstrapper.Close()
-		// there's not much we can do apart from logging the error and praying
+		// 除了记录错误和祈祷外，我们无法做太多事情
 		if err != nil {
-			mb.logger.Error("ManagedBootstrapNode: error while closing bootstrapper", commontypes.LogFields{
+			mb.logger.Error("ManagedBootstrapNode: 关闭引导程序时出错", commontypes.LogFields{
 				"error": err,
 			})
 		}
@@ -109,17 +103,15 @@ func (mb *managedBootstrapNodeState) closeBootstrapper() {
 }
 
 func (mb *managedBootstrapNodeState) configChanged(cc types.ContractConfig) {
-	// Cease any operation from earlier configs
+	// 停止之前配置的任何操作
 	mb.closeBootstrapper()
 
 	var err error
-	// We're okay to skip chain-specific checks here. A bootstrap node does not
-	// use any chain-specific parameters, since it doesn't participate in the
-	// actual OCR protocol. It just hangs out on the P2P network and helps other
-	// nodes find each other.
+	// 我们可以在此跳过特定于链的检查。引导节点不使用任何特定于链的参数，
+	// 因为它不参与实际的 OCR 协议。它只是在 P2P 网络中挂出并帮助其他节点相互发现。
 	mb.config, err = config.PublicConfigFromContractConfig(nil, true, cc)
 	if err != nil {
-		mb.logger.Error("ManagedBootstrapNode: error while decoding ContractConfig", commontypes.LogFields{
+		mb.logger.Error("ManagedBootstrapNode: 解码 ContractConfig 时出错", commontypes.LogFields{
 			"error": err,
 		})
 		return
@@ -132,17 +124,19 @@ func (mb *managedBootstrapNodeState) configChanged(cc types.ContractConfig) {
 
 	bootstrapper, err := mb.bootstrapperFactory.NewBootstrapper(mb.config.ConfigDigest, peerIDs, mb.v2bootstrappers, mb.config.F)
 	if err != nil {
-		mb.logger.Error("ManagedBootstrapNode: error during NewBootstrapper", commontypes.LogFields{
+		mb.logger.Error("ManagedBootstrapNode: NewBootstrapper 期间出错", commontypes.LogFields{
 			"error":           err,
 			"configDigest":    mb.config.ConfigDigest,
 			"peerIDs":         peerIDs,
-			"v2bootstrappers": mb.v2bootstrappers,
+			"v2boot
+
+strappers": mb.v2bootstrappers,
 		})
 		return
 	}
 	err = bootstrapper.Start()
 	if err != nil {
-		mb.logger.Error("ManagedBootstrapNode: error during bootstrapper.Start()", commontypes.LogFields{
+		mb.logger.Error("ManagedBootstrapNode: bootstrapper.Start() 期间出错", commontypes.LogFields{
 			"error":        err,
 			"configDigest": mb.config.ConfigDigest,
 		})
@@ -154,10 +148,10 @@ func (mb *managedBootstrapNodeState) configChanged(cc types.ContractConfig) {
 	childCtx, childCancel := context.WithTimeout(mb.ctx, mb.localConfig.DatabaseTimeout)
 	defer childCancel()
 	if err := mb.database.WriteConfig(childCtx, cc); err != nil {
-		mb.logger.ErrorIfNotCanceled("ManagedBootstrapNode: error writing new config to database", childCtx, commontypes.LogFields{
+		mb.logger.ErrorIfNotCanceled("ManagedBootstrapNode: 向数据库写入新配置时出错", childCtx, commontypes.LogFields{
 			"config": cc,
 			"error":  err,
 		})
-		// We can keep running even without storing the config in the database
+		// 即使不将配置存储在数据库中，我们也可以继续运行
 	}
 }

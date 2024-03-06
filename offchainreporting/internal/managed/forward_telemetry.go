@@ -9,28 +9,24 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// forwardTelemetry receives monitoring events on chTelemetry, serializes them, and forwards
-// them to monitoringEndpoint
+// forwardTelemetry 接收 chTelemetry 上的监控事件，将其序列化并转发到 monitoringEndpoint
 func forwardTelemetry(
 	ctx context.Context,
-
 	logger loghelper.LoggerWithContext,
 	monitoringEndpoint commontypes.MonitoringEndpoint,
-
 	chTelemetry <-chan *protobuf.TelemetryWrapper,
 ) {
 	for {
 		select {
 		case t, ok := <-chTelemetry:
 			if !ok {
-				// This isn't supposed to happen, but we still handle this case gracefully,
-				// just in case...
-				logger.Error("forwardTelemetry: chTelemetry closed unexpectedly. exiting", nil)
+				// 这不应该发生，但我们仍然优雅地处理这种情况，以防万一...
+				logger.Error("forwardTelemetry: chTelemetry 意外关闭。退出", nil)
 				return
 			}
 			bin, err := proto.Marshal(t)
 			if err != nil {
-				logger.Error("forwardTelemetry: failed to Marshal protobuf", commontypes.LogFields{
+				logger.Error("forwardTelemetry: 失败 Marshal protobuf", commontypes.LogFields{
 					"proto": t,
 					"error": err,
 				})
@@ -40,7 +36,7 @@ func forwardTelemetry(
 				monitoringEndpoint.SendLog(bin)
 			}
 		case <-ctx.Done():
-			logger.Info("forwardTelemetry: exiting", nil)
+			logger.Info("forwardTelemetry: 退出", nil)
 			return
 		}
 	}
