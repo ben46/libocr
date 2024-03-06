@@ -13,19 +13,19 @@ import (
 
 type trackConfigState struct {
 	ctx context.Context
-	// in
+	// 输入
 	configTracker types.ContractConfigTracker
 	localConfig   types.LocalConfig
 	logger        loghelper.LoggerWithContext
-	// out
+	// 输出
 	chChanges chan<- types.ContractConfig
-	// local
+	// 本地
 	subprocesses subprocesses.Subprocesses
 	configDigest types.ConfigDigest
 }
 
 func (state *trackConfigState) run() {
-	// Check immediately after startup
+	// 启动后立即检查
 	tCheckLatestConfigDetails := time.After(0)
 	tResubscribe := time.After(0)
 
@@ -36,27 +36,27 @@ func (state *trackConfigState) run() {
 		select {
 		case _, ok := <-chSubscription:
 			if ok {
-				// Check immediately for new config
+				// 立即检查新配置
 				tCheckLatestConfigDetails = time.After(0 * time.Second)
-				state.logger.Info("TrackConfig: subscription fired", nil)
+				state.logger.Info("TrackConfig: 订阅已触发", nil)
 			} else {
 				chSubscription = nil
 				subscription.Close()
-				state.logger.Warn("TrackConfig: subscription was closed", nil)
+				state.logger.Warn("TrackConfig: 订阅已关闭", nil)
 				tResubscribe = time.After(0)
 			}
 		case <-tCheckLatestConfigDetails:
 			change, awaitingConfirmation := state.checkLatestConfigDetails()
-			state.logger.Debug("TrackConfig: checking latestConfigDetails", nil)
+			state.logger.Debug("TrackConfig: 检查LatestConfigDetails", nil)
 
-			// poll more rapidly if we're awaiting confirmation
+			// 如果正在等待确认，就更快地轮询
 			if awaitingConfirmation {
 				wait := 15 * time.Second
 				if state.localConfig.ContractConfigTrackerPollInterval < wait {
 					wait = state.localConfig.ContractConfigTrackerPollInterval
 				}
 				tCheckLatestConfigDetails = time.After(wait)
-				state.logger.Info("TrackConfig: awaiting confirmation of new config", commontypes.LogFields{
+				state.logger.Info("TrackConfig: 等待确认新配置", commontypes.LogFields{
 					"wait": wait,
 				})
 			} else {
@@ -65,7 +65,7 @@ func (state *trackConfigState) run() {
 
 			if change != nil {
 				state.configDigest = change.ConfigDigest
-				state.logger.Info("TrackConfig: returning config", commontypes.LogFields{
+				state.logger.Info("TrackConfig: 返回配置", commontypes.LogFields{
 					"configDigest": change.ConfigDigest.Hex(),
 				})
 				select {
@@ -80,7 +80,7 @@ func (state *trackConfigState) run() {
 			subscribeCancel()
 			if err != nil {
 				state.logger.ErrorIfNotCanceled(
-					"TrackConfig: failed to SubscribeToNewConfigs. Retrying later",
+					"TrackConfig: SubscribeToNewConfigs失败。稍后重试",
 					subscribeCtx,
 					commontypes.LogFields{
 						"error":                                  err,
@@ -94,15 +94,15 @@ func (state *trackConfigState) run() {
 		case <-state.ctx.Done():
 		}
 
-		// ensure prompt exit
+		// 确保及时退出
 		select {
 		case <-state.ctx.Done():
-			state.logger.Debug("TrackConfig: winding down", nil)
+			state.logger.Debug("TrackConfig: 清理中", nil)
 			if subscription != nil {
 				subscription.Close()
 			}
 			state.subprocesses.Wait()
-			state.logger.Debug("TrackConfig: exiting", nil)
+			state.logger.Debug("TrackConfig: 退出", nil)
 			return
 		default:
 		}
@@ -116,7 +116,7 @@ func (state *trackConfigState) checkLatestConfigDetails() (
 	defer bhCancel()
 	blockheight, err := state.configTracker.LatestBlockHeight(bhCtx)
 	if err != nil {
-		state.logger.ErrorIfNotCanceled("TrackConfig: error during LatestBlockHeight()", bhCtx, commontypes.LogFields{
+		state.logger.ErrorIfNotCanceled("TrackConfig: LatestBlockHeight()出错", bhCtx, commontypes.LogFields{
 			"error": err,
 		})
 		return nil, false
@@ -126,13 +126,13 @@ func (state *trackConfigState) checkLatestConfigDetails() (
 	defer detailsCancel()
 	changedInBlock, latestConfigDigest, err := state.configTracker.LatestConfigDetails(detailsCtx)
 	if err != nil {
-		state.logger.ErrorIfNotCanceled("TrackConfig: error during LatestConfigDetails()", detailsCtx, commontypes.LogFields{
+		state.logger.ErrorIfNotCanceled("TrackConfig: LatestConfigDetails()出错", detailsCtx, commontypes.LogFields{
 			"error": err,
 		})
 		return nil, false
 	}
 	if latestConfigDigest == (types.ConfigDigest{}) {
-		state.logger.Warn("TrackConfig: LatestConfigDetails() returned a zero configDigest. Looks like the contract has not been configured", commontypes.LogFields{
+		state.logger.Warn("TrackConfig: LatestConfigDetails()返回了零configDigest。看起来合约尚未配置", commontypes.LogFields{
 			"configDigest": latestConfigDigest,
 		})
 		return nil, false
@@ -147,13 +147,13 @@ func (state *trackConfigState) checkLatestConfigDetails() (
 	defer configCancel()
 	contractConfig, err := state.configTracker.ConfigFromLogs(configCtx, changedInBlock)
 	if err != nil {
-		state.logger.ErrorIfNotCanceled("TrackConfig: error during LatestConfigDetails()", configCtx, commontypes.LogFields{
+		state.logger.ErrorIfNotCanceled("TrackConfig: LatestConfigDetails()出错", configCtx, commontypes.LogFields{
 			"error": err,
 		})
 		return nil, true
 	}
 	if contractConfig.EncodedConfigVersion != config.EncodedConfigVersion {
-		state.logger.Error("TrackConfig: received config change with unknown EncodedConfigVersion",
+		state.logger.Error("TrackConfig: 收到具有未知EncodedConfigVersion的配置更改",
 			commontypes.LogFields{"versionReceived": contractConfig.EncodedConfigVersion})
 		return nil, false
 	}
@@ -172,13 +172,13 @@ func TrackConfig(
 ) {
 	state := trackConfigState{
 		ctx,
-		// in
+		// 输入
 		configTracker,
 		localConfig,
 		logger,
-		//out
+		// 输出
 		chChanges,
-		// local
+		// 本地
 		subprocesses.Subprocesses{},
 		initialConfigDigest,
 	}

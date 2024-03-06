@@ -15,9 +15,8 @@ import (
 	"github.com/smartcontractkit/libocr/subprocesses"
 )
 
-// RunManagedOracle runs a "managed" version of protocol.RunOracle. It handles
-// configuration updates and translating from commontypes.BinaryNetworkEndpoint to
-// protocol.NetworkEndpoint.
+// RunManagedOracle 运行一个“管理型”版本的 protocol.RunOracle。它处理配置更新和从 commontypes.BinaryNetworkEndpoint
+// 转换为 protocol.NetworkEndpoint。
 func RunManagedOracle(
 	ctx context.Context,
 
@@ -87,8 +86,7 @@ func (mo *managedOracleState) run() {
 		collectGarbage(mo.ctx, mo.database, mo.localConfig, mo.logger)
 	})
 
-	// Restore config from database, so that we can run even if the ethereum node
-	// isn't working.
+	// 从数据库恢复配置，这样即使以太坊节点不工作，我们也可以运行。
 	{
 		var cc *types.ContractConfig
 		ok := mo.otherSubprocesses.BlockForAtMost(
@@ -99,7 +97,7 @@ func (mo *managedOracleState) run() {
 			},
 		)
 		if !ok {
-			mo.logger.Error("ManagedOracle: database timed out while attempting to restore configuration", commontypes.LogFields{
+			mo.logger.Error("ManagedOracle: 试图恢复配置时数据库超时", commontypes.LogFields{
 				"timeout": mo.localConfig.DatabaseTimeout,
 			})
 		} else if cc != nil {
@@ -107,7 +105,7 @@ func (mo *managedOracleState) run() {
 		}
 	}
 
-	// Only start tracking config after we attempted to load config from db
+	// 只有在我们尝试从数据库加载配置之后才开始跟踪配置
 	chNewConfig := make(chan types.ContractConfig, 5)
 	mo.otherSubprocesses.Go(func() {
 		TrackConfig(mo.ctx, mo.configTracker, mo.config.ConfigDigest, mo.localConfig, mo.logger, chNewConfig)
@@ -116,17 +114,17 @@ func (mo *managedOracleState) run() {
 	for {
 		select {
 		case change := <-chNewConfig:
-			mo.logger.Info("ManagedOracle: switching between configs", commontypes.LogFields{
+			mo.logger.Info("ManagedOracle: 切换配置", commontypes.LogFields{
 				"oldConfigDigest": mo.config.ConfigDigest.Hex(),
 				"newConfigDigest": change.ConfigDigest.Hex(),
 			})
 			mo.configChanged(change)
 		case <-mo.ctx.Done():
-			mo.logger.Info("ManagedOracle: winding down", nil)
+			mo.logger.Info("ManagedOracle: 渐进关闭", nil)
 			mo.closeOracle()
 			mo.otherSubprocesses.Wait()
-			mo.logger.Info("ManagedOracle: exiting", nil)
-			return // Exit ManagedOracle event loop altogether
+			mo.logger.Info("ManagedOracle: 退出", nil)
+			return // 完全退出 ManagedOracle 事件循环
 		}
 	}
 }
@@ -137,10 +135,10 @@ func (mo *managedOracleState) closeOracle() {
 		mo.oracleSubprocesses.Wait()
 		err := mo.netEndpoint.Close()
 		if err != nil {
-			mo.logger.Error("ManagedOracle: error while closing BinaryNetworkEndpoint", commontypes.LogFields{
+			mo.logger.Error("ManagedOracle: 关闭 BinaryNetworkEndpoint 时出错", commontypes.LogFields{
 				"error": err,
 			})
-			// nothing to be done about it, let's try to carry on.
+			// 无法处理，尝试继续。
 		}
 		mo.oracleCancel = nil
 		mo.netEndpoint = nil
@@ -148,10 +146,10 @@ func (mo *managedOracleState) closeOracle() {
 }
 
 func (mo *managedOracleState) configChanged(contractConfig types.ContractConfig) {
-	// Cease any operation from earlier configs
+	// 停止先前配置的任何操作
 	mo.closeOracle()
 
-	// Decode contractConfig
+	// 解码 contractConfig
 	skipChainSpecificChecks := mo.localConfig.DevelopmentMode == types.EnableDangerousDevelopmentMode
 	var err error
 	var oid commontypes.OracleID
@@ -164,13 +162,13 @@ func (mo *managedOracleState) configChanged(contractConfig types.ContractConfig)
 		mo.contractTransmitter.FromAddress(),
 	)
 	if err != nil {
-		mo.logger.Error("ManagedOracle: error while updating config", commontypes.LogFields{
+		mo.logger.Error("ManagedOracle: 更新配置时出错", commontypes.LogFields{
 			"error": err,
 		})
 		return
 	}
 
-	// Run with new config
+	// 使用新配置运行
 	peerIDs := []string{}
 	for _, identity := range mo.config.OracleIdentities {
 		peerIDs = append(peerIDs, identity.PeerID)
@@ -185,7 +183,7 @@ func (mo *managedOracleState) configChanged(contractConfig types.ContractConfig)
 		mo.v2bootstrappers, mo.config.F, computeTokenBucketRefillRate(mo.config.PublicConfig),
 		computeTokenBucketSize())
 	if err != nil {
-		mo.logger.Error("ManagedOracle: error during NewEndpoint", commontypes.LogFields{
+		mo.logger.Error("ManagedOracle: NewEndpoint 时出错", commontypes.LogFields{
 			"error":           err,
 			"configDigest":    mo.config.ConfigDigest,
 			"peerIDs":         peerIDs,
@@ -202,7 +200,7 @@ func (mo *managedOracleState) configChanged(contractConfig types.ContractConfig)
 	)
 
 	if err := netEndpoint.Start(); err != nil {
-		mo.logger.Error("ManagedOracle: error during netEndpoint.Start()", commontypes.LogFields{
+		mo.logger.Error("ManagedOracle: netEndpoint.Start() 时出错", commontypes.LogFields{
 			"error":        err,
 			"configDigest": mo.config.ConfigDigest,
 		})
@@ -233,7 +231,7 @@ func (mo *managedOracleState) configChanged(contractConfig types.ContractConfig)
 	childCtx, childCancel := context.WithTimeout(mo.ctx, mo.localConfig.DatabaseTimeout)
 	defer childCancel()
 	if err := mo.database.WriteConfig(childCtx, contractConfig); err != nil {
-		mo.logger.ErrorIfNotCanceled("ManagedOracle: error writing new config to database", childCtx, commontypes.LogFields{
+		mo.logger.ErrorIfNotCanceled("ManagedOracle: 将新配置写入数据库时出错", childCtx, commontypes.LogFields{
 			"configDigest": mo.config.ConfigDigest,
 			"config":       contractConfig,
 			"error":        err,
