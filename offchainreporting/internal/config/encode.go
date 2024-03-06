@@ -14,8 +14,7 @@ import (
 
 const EncodedConfigVersion = 1
 
-// setConfigEncodedComponents contains the contents of the oracle Config objects
-// which need to be serialized
+// setConfigEncodedComponents 包含需要序列化的 Oracle Config 对象的内容
 type setConfigEncodedComponents struct {
 	DeltaProgress           time.Duration
 	DeltaResend             time.Duration
@@ -31,9 +30,7 @@ type setConfigEncodedComponents struct {
 	SharedSecretEncryptions SharedSecretEncryptions
 }
 
-// setConfigSerializationTypes gives the types used to represent a
-// setConfigEncodedComponents to abiencode. The field names must match those of
-// setConfigEncodedComponents.
+// setConfigSerializationTypes 给出了用于表示 setConfigEncodedComponents 的类型，以便进行 abi 编码。字段名称必须与 setConfigEncodedComponents 的字段名称匹配。
 type setConfigSerializationTypes struct {
 	DeltaProgress           int64
 	DeltaResend             int64
@@ -44,36 +41,32 @@ type setConfigSerializationTypes struct {
 	DeltaStage              int64
 	RMax                    uint8
 	S                       []uint8
-	OffchainPublicKeys      []common.Hash // Each key is a bytes32
-	PeerIDs                 string        // comma-separated
+	OffchainPublicKeys      []common.Hash // 每个密钥都是 bytes32
+	PeerIDs                 string        // 逗号分隔
 	SharedSecretEncryptions sseSerializationTypes
 }
 
-// sseSerializationTypes gives the types used to represent an
-// SharedSecretEncryptions to abiencode. The field names must match those of
-// SharedSecretEncryptions.
+// sseSerializationTypes 给出了用于表示 SharedSecretEncryptions 的类型，以便进行 abi 编码。字段名称必须与 SharedSecretEncryptions 的字段名称匹配。
 type sseSerializationTypes struct {
 	DiffieHellmanPoint common.Hash
 	SharedSecretHash   common.Hash
 	Encryptions        [][SharedSecretSize]byte
 }
 
-// encoding is the ABI schema used to encode a setConfigEncodedComponents, taken
-// from setConfigEncodedComponentsABI in ./abiencode.go (in this package directory.)
+// encoding 是用于编码 setConfigEncodedComponents 的 ABI 模式，取自 setConfigEncodedComponentsABI（位于此包目录下的 abiencode.go 文件中）。
 var encoding = getEncoding()
 
-// Serialized configs must be no larger than this (arbitrary bound, to prevent
-// resource exhaustion attacks)
+// Serialized configs 的大小不能超过此值（为了防止资源耗尽攻击而设置的任意限制）
 var configSizeBound = 20 * 1000
 
-// Encode returns a binary serialization of o
+// Encode 返回对象 o 的二进制序列化表示
 func (o setConfigEncodedComponents) encode() []byte {
 	rv, err := encoding.Pack(o.serializationRepresentation())
 	if err != nil {
 		panic(err)
 	}
 	if len(rv) > configSizeBound {
-		panic("config serialization too large")
+		panic("config 序列化太大")
 	}
 	return rv
 }
@@ -83,12 +76,12 @@ func decodeContractSetConfigEncodedComponents(
 ) (o setConfigEncodedComponents, err error) {
 	if len(b) > configSizeBound {
 		return o, errors.Errorf(
-			"attempt to deserialize a too-long config (%d bytes)", len(b),
+			"尝试反序列化过长的配置（%d 字节）", len(b),
 		)
 	}
 	var vals []interface{}
 	if vals, err = encoding.Unpack(b); err != nil {
-		return o, errors.Wrapf(err, "could not deserialize setConfig binary blob")
+		return o, errors.Wrapf(err, "无法反序列化 setConfig 二进制 blob")
 	}
 	setConfig := abi.ConvertType(vals[0], &setConfigSerializationTypes{}).(*setConfigSerializationTypes)
 	return setConfig.golangRepresentation(), nil
@@ -173,9 +166,7 @@ func (er sseSerializationTypes) golangRepresentation() SharedSecretEncryptions {
 }
 
 func getEncoding() abi.Arguments {
-	// Trick used in abi's TestPack, to parse a list of arguments: make a JSON
-	// representation of a method which has the target list as the inputs, then
-	// pull the parsed argument list out of that method.
+	// 在 abi 的 TestPack 中使用的技巧，用于解析参数列表：创建一个方法的 JSON 表示，该方法的输入为目标列表，然后从该方法中提取出解析的参数列表。
 	aBI, err := abi.JSON(strings.NewReader(fmt.Sprintf(
 		`[{ "name" : "method", "type": "function", "inputs": %s}]`,
 		setConfigEncodedComponentsABI)))
@@ -190,20 +181,20 @@ func checkFieldNamesAgainstStruct(fields map[string]bool, i interface{}) {
 	for i := 0; i < s.NumField(); i++ {
 		fieldName := s.Field(i).Name
 		if !fields[fieldName] {
-			panic("no encoding found for " + fieldName)
+			panic("未找到" + fieldName + "的编码")
 		}
 		fields[fieldName] = false
 	}
 	for name, unseen := range fields {
 		if unseen {
-			panic("extra field found in abiencode schema, " + name)
+			panic("在 abiencode 模式中找到额外的字段，" + name)
 		}
 	}
 }
 
 func checkTupEntriesMatchStruct(t abi.Type, i interface{}) {
 	if t.T != abi.TupleTy {
-		panic("tuple required")
+		panic("需要元组")
 	}
 	fields := make(map[string]bool)
 	for _, fieldName := range t.TupleRawNames {
@@ -213,12 +204,12 @@ func checkTupEntriesMatchStruct(t abi.Type, i interface{}) {
 	checkFieldNamesAgainstStruct(fields, i)
 }
 
-func init() { // check that abiencode fields match those of config structs
+func init() { // 检查 abiencode 字段是否与 config 结构体匹配
 	checkTupEntriesMatchStruct(encoding[0].Type, setConfigEncodedComponents{})
 	components := encoding[0].Type.TupleElems
 	essName := encoding[0].Type.TupleRawNames[len(components)-1]
 	if essName != "sharedSecretEncryptions" {
-		panic("expecting sharedSecretEncryptions in last position, got " + essName)
+		panic("期望 sharedSecretEncryptions 在最后的位置上，得到的是 " + essName)
 	}
 	ess := components[len(components)-1]
 	checkTupEntriesMatchStruct(*ess, SharedSecretEncryptions{})
@@ -227,19 +218,19 @@ func init() { // check that abiencode fields match those of config structs
 func checkFieldNamesMatch(s, t interface{}) {
 	st, tt := reflect.ValueOf(s).Type(), reflect.ValueOf(t).Type()
 	if st.NumField() != tt.NumField() {
-		panic(fmt.Sprintf("number of fields differ: %T has %d, %T has %d",
+		panic(fmt.Sprintf("字段数量不匹配：%T 有 %d 个字段，%T 有 %d 个字段",
 			s, st.NumField(),
 			t, tt.NumField()))
 	}
 	for i := 0; i < st.NumField(); i++ {
 		if st.Field(i).Name != tt.Field(i).Name {
-			panic(fmt.Sprintf("field name mismatch on %T vs %T: %s vs %s",
+			panic(fmt.Sprintf("字段名称在 %T 与 %T 不匹配：%s vs %s",
 				s, t, st.Field(i).Name, tt.Field(i).Name))
 		}
 	}
 }
 
-func init() { // Check that serialization fields match those of target structs
+func init() { // 检查序列化字段是否与目标结构体匹配
 	checkFieldNamesMatch(setConfigEncodedComponents{}, setConfigSerializationTypes{})
 	checkFieldNamesMatch(SharedSecretEncryptions{}, sseSerializationTypes{})
 }

@@ -12,37 +12,33 @@ import (
 	"golang.org/x/crypto/curve25519"
 )
 
-const SharedSecretSize = 16 // A 128-bit symmetric key
+const SharedSecretSize = 16 // 一个 128 位对称密钥
 type encryptedSharedSecret [SharedSecretSize]byte
 
-// SharedSecretEncryptions is the encryptions of SharedConfig.SharedSecret,
-// using each oracle's SharedSecretEncryptionPublicKey.
+// SharedSecretEncryptions 是使用每个 Oracle 的 SharedSecretEncryptionPublicKey 加密的 SharedConfig.SharedSecret。
 //
-// We use a custom encryption scheme to be more space-efficient (compared to
-// standard AEAD schemes, nacl crypto_box, etc...), which saves gas in
-// transmission to the OffchainAggregator.
+// 我们使用自定义加密方案以更节省空间（与标准 AEAD 方案、nacl crypto_box 等相比），
+// 这样在传输到 OffchainAggregator 时可以节省 gas。
 type SharedSecretEncryptions struct {
-	// (secret key chosen by dealer) * g, X25519 point
+	// （由 dealer 选择的秘密密钥）* g，X25519 点
 	DiffieHellmanPoint [curve25519.PointSize]byte
 
-	// keccak256 of plaintext sharedSecret.
+	// 明文 sharedSecret 的 keccak256。
 	//
-	// Since SharedSecretEncryptions are shared through a smart contract, each
-	// oracle will see the same SharedSecretHash. After decryption, oracles can
-	// check their sharedSecret against SharedSecretHash to prevent the dealer
-	// from equivocating
+	// 由于 SharedSecretEncryptions 通过智能合约共享，每个 Oracle 将看到相同的 SharedSecretHash。
+	// 在解密后，Oracles 可以将其 sharedSecret 与 SharedSecretHash 进行比较，以防止 dealer 拉锯式行为。
 	SharedSecretHash common.Hash
 
-	// Encryptions of the shared secret with one entry for each oracle. The
-	// i-th oracle can recover the key as follows:
+	// 通过每个 Oracle 的密钥加密的共享密钥的加密。第 i 个 Oracle 可以如下恢复密钥：
 	//
-	// 1. key := Keccak256(DH(DiffieHellmanPoint, process' secret key))[:16]
+	// 1. key := Keccak256(DH(DiffieHellmanPoint, 进程的秘密密钥))[:16]
 	// 2. sharedSecret := AES128DecryptBlock(key, Encryptions[i])
 	//
-	// See Decrypt for details.
+	// 详见 Decrypt。
 	Encryptions []encryptedSharedSecret
 }
 
+// Equal 检查两个 SharedSecretEncryptions 是否相等。
 func (e SharedSecretEncryptions) Equal(e2 SharedSecretEncryptions) bool {
 	if len(e.Encryptions) != len(e2.Encryptions) {
 		return false
@@ -56,21 +52,21 @@ func (e SharedSecretEncryptions) Equal(e2 SharedSecretEncryptions) bool {
 		e.SharedSecretHash == e2.SharedSecretHash
 }
 
-// Decrypt one block with AES-128
+// 使用 AES-128 解密一个块。
 func aesDecryptBlock(key, ciphertext []byte) [16]byte {
 	if len(key) != 16 {
-		// assertion
-		panic("key has wrong length")
+		// 断言
+		panic("密钥长度错误")
 	}
 	if len(ciphertext) != 16 {
-		// assertion
-		panic("ciphertext has wrong length")
+		// 断言
+		panic("密文长度错误")
 	}
 
 	cipher, err := aes.NewCipher(key)
 	if err != nil {
-		// assertion
-		panic(fmt.Sprintf("Unexpected error during aes.NewCipher: %v", err))
+		// 断言
+		panic(fmt.Sprintf("在 aes.NewCipher 过程中出现意外错误: %v", err))
 	}
 
 	var plaintext [16]byte
@@ -78,10 +74,10 @@ func aesDecryptBlock(key, ciphertext []byte) [16]byte {
 	return plaintext
 }
 
-// Decrypt returns the sharedSecret
+// Decrypt 返回 sharedSecret。
 func (e SharedSecretEncryptions) Decrypt(oid commontypes.OracleID, k types.PrivateKeys) (*[SharedSecretSize]byte, error) {
 	if len(e.Encryptions) <= int(oid) {
-		return nil, errors.New("oid out of range of SharedSecretEncryptions.Encryptions")
+		return nil, errors.New("oid 超出 SharedSecretEncryptions.Encryptions 范围")
 	}
 
 	dhPoint, err := k.ConfigDiffieHellman(&e.DiffieHellmanPoint)
@@ -94,7 +90,7 @@ func (e SharedSecretEncryptions) Decrypt(oid commontypes.OracleID, k types.Priva
 	sharedSecret := aesDecryptBlock(key, e.Encryptions[int(oid)][:])
 
 	if common.BytesToHash(crypto.Keccak256(sharedSecret[:])) != e.SharedSecretHash {
-		return nil, errors.Errorf("decrypted sharedSecret has wrong hash")
+		return nil, errors.Errorf("解密后的 sharedSecret 哈希值不正确")
 	}
 
 	return &sharedSecret, nil

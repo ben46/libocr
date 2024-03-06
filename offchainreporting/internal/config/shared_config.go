@@ -13,14 +13,14 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-// SharedConfig is the configuration shared by all oracles running an instance
-// of the protocol. It's disseminated through the smart contract,
-// but parts of it are encrypted so that only oracles can access them.
+// SharedConfig 是所有运行协议实例的 Oracle 共享的配置。
+// 它通过智能合约传播，但其中的部分是加密的，只有 Oracle 可以访问。
 type SharedConfig struct {
-	PublicConfig
-	SharedSecret *[SharedSecretSize]byte
+	PublicConfig     // 继承自 PublicConfig 结构体
+	SharedSecret *[SharedSecretSize]byte // 共享密钥
 }
 
+// LeaderSelectionKey 根据共享密钥生成领导者选择密钥。
 func (c *SharedConfig) LeaderSelectionKey() [16]byte {
 	var result [16]byte
 	h := sha3.NewLegacyKeccak256()
@@ -31,6 +31,7 @@ func (c *SharedConfig) LeaderSelectionKey() [16]byte {
 	return result
 }
 
+// TransmissionOrderKey 根据共享密钥生成传输顺序密钥。
 func (c *SharedConfig) TransmissionOrderKey() [16]byte {
 	var result [16]byte
 	h := sha3.NewLegacyKeccak256()
@@ -41,6 +42,7 @@ func (c *SharedConfig) TransmissionOrderKey() [16]byte {
 	return result
 }
 
+// SharedConfigFromContractConfig 根据合约配置生成共享配置。
 func SharedConfigFromContractConfig(
 	chainID *big.Int,
 	skipChainSpecificChecks bool,
@@ -54,6 +56,7 @@ func SharedConfigFromContractConfig(
 		return SharedConfig{}, 0, err
 	}
 
+	// 在公共配置中查找 Oracle 的身份并验证其与私钥的匹配性
 	oracleID := commontypes.OracleID(math.MaxUint8)
 	{
 		var found bool
@@ -91,6 +94,7 @@ func SharedConfigFromContractConfig(
 		}
 	}
 
+	// 解密共享密钥
 	x, err := encSharedSecret.Decrypt(oracleID, privateKeys)
 	if err != nil {
 		return SharedConfig{}, 0, errors.Wrapf(err, "could not decrypt shared secret")
@@ -103,6 +107,7 @@ func SharedConfigFromContractConfig(
 
 }
 
+// XXXContractSetConfigArgsFromSharedConfig 从共享配置设置合约配置参数。
 func XXXContractSetConfigArgsFromSharedConfig(
 	c SharedConfig,
 	sharedSecretEncryptionPublicKeys []types.SharedSecretEncryptionPublicKey,
@@ -116,14 +121,16 @@ func XXXContractSetConfigArgsFromSharedConfig(
 ) {
 	offChainPublicKeys := []types.OffchainPublicKey{}
 	peerIDs := []string{}
+	// 遍历共享配置中的 Oracle 身份，收集签名者、传输者、Offchain 公钥和 PeerID
 	for _, identity := range c.OracleIdentities {
 		signers = append(signers, common.Address(identity.OnChainSigningAddress))
 		transmitters = append(transmitters, identity.TransmitAddress)
 		offChainPublicKeys = append(offChainPublicKeys, identity.OffchainPublicKey)
 		peerIDs = append(peerIDs, identity.PeerID)
 	}
-	threshold = uint8(c.F)
-	encodedConfigVersion = 1
+	threshold = uint8(c.F) // 设置阈值为共享配置中的 F 值
+	encodedConfigVersion = 1 // 编码配置版本为 1
+	// 编码配置参数并加密共享密钥
 	encodedConfig = (setConfigEncodedComponents{
 		c.DeltaProgress,
 		c.DeltaResend,
