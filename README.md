@@ -1,3 +1,11 @@
+# OffChain Reporting
+
+链下报告（OCR）是增加 Chainlink 网络分散化和可扩展性的重要一步。请查阅 OCR 协议论文以深入了解技术细节。
+
+对于链下报告聚合器，所有节点使用点对点网络进行通信。在通信过程中，运行轻量级共识算法，每个节点报告其数据观察并对其进行签名。然后传输单一的聚合交易，这样可以节省大量 gas。
+
+聚合交易中包含的报告由 Oracle 法定人数签名，并包含所有 Oracle 的观察。通过在链上验证报告并在链上检查法定人数的签名，我们保留了 Chainlink Oracle 网络的无信任属性。
+
 # libocr
 
 libocr 包括一个 Go 库和一组 Solidity 智能合约，实现了*Chainlink Offchain Reporting Protocol*，这是一个[拜占庭容错](https://en.wikipedia.org/wiki/Byzantine_fault)协议，允许一组 Oracle 在链下生成一个聚合报告，汇总了这些 Oracle 对某个基础数据源的观察。然后将此报告以单个交易的形式传输到链上合约。
