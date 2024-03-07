@@ -2,81 +2,60 @@ package types
 
 import "time"
 
-const EnableDangerousDevelopmentMode = "enable dangerous development mode"
+// EnableDangerousDevelopmentMode 常量表示启用危险的开发模式
 
-// LocalConfig contains oracle-specific configuration details which are not
-// mandated by the on-chain configuration specification via OffchainAggregator.SetConfig
+// LocalConfig 包含了不由 OnchainAggregator.SetConfig 强制约定的特定于 oracle 的配置细节
 type LocalConfig struct {
-	// Timeout for blockchain queries (mediated through
-	// ContractConfigTracker and ContractTransmitter).
-	// (This is necessary because an oracle's operations are serialized, so
-	// blocking forever on a chain interaction would break the oracle.)
+	// 区块链查询超时时间（通过 ContractConfigTracker 和 ContractTransmitter 进行中介）
+	// （这是必要的，因为 Oracle 的操作是串行的，因此在链交互上永远阻塞将会破坏 Oracle）
 	BlockchainTimeout time.Duration
 
-	// Number of block confirmations to wait for before enacting an on-chain
-	// configuration change. This value doesn't need to be very high (in
-	// particular, it does not need to protect against malicious re-orgs).
-	// Since configuration changes create some overhead, and mini-reorgs
-	// are fairly common, recommended values are between two and ten.
+	// 在执行链上配置更改之前等待的区块确认数量。这个值不需要很高（特别是不需要保护免受恶意重组的影响）。
+	// 由于配置更改会产生一些额外开销，并且小型重组是相当常见的，建议的值在两到十之间。
 	//
-	// Malicious re-orgs are not any more of concern here than they are in
-	// blockchain applications in general: Since nodes check the contract for the
-	// latest config every ContractConfigTrackerPollInterval.Seconds(), they will
-	// come to a common view of the current config within any interval longer than
-	// that, as long as the latest setConfig transaction in the longest chain is
-	// stable. They will thus be able to continue reporting after the poll
-	// interval, unless an adversary is able to repeatedly re-org the transaction
-	// out during every poll interval, which would amount to the capability to
-	// censor any transaction.
+	// 恶意重组在这里并不比在区块链应用程序中一般更令人担忧：
+	// 由于节点每隔 ContractConfigTrackerPollInterval.Seconds() 检查合约以获取最新配置，它们将在任何长于该间隔的间隔内对当前配置达成共识，
+	// 只要最长链上的最新 setConfig 事务是稳定的。它们因此能够在轮询间隔之后继续报告，除非对手能够在每次轮询间隔期间重复重组该事务，这将导致能够审查任何事务。
 	//
-	// Note that 1 confirmation implies that the transaction/event has been mined in one block.
-	// 0 confirmations would imply that the event would be recognised before it has even been mined, which is not currently supported.
-	// e.g.
-	// Current block height: 42
-	// Changed in block height: 43
-	// Contract config confirmations: 1
-	// STILL PENDING
+	// 请注意，1 个确认意味着事务/事件已在一个区块中被挖掘。
+	// 0 个确认意味着事件将会在挖掘之前被识别，这目前不受支持。
+	// 例如:
+	// 当前区块高度：42
+	// 改变区块高度：43
+	// 合约配置确认数：1
+	// 仍在等待
 	//
-	// Current block height: 43
-	// Changed in block height: 43
-	// Contract config confirmations: 1
-	// CONFIRMED
+	// 当前区块高度：43
+	// 改变区块高度：43
+	// 合约配置确认数：1
+	// 已确认
 	ContractConfigConfirmations uint16
 
-	// SkipContractConfigConfirmations allows to disable the confirmations check entirely
-	// This can be useful in some cases e.g. L2 which has instant finality and
-	// where local block numbers do not match the on-chain value returned from
-	// block.number
+	// SkipContractConfigConfirmations 允许完全禁用确认检查
+	// 这在某些情况下可能很有用，例如具有即时最终性的 L2，本地区块编号与从 block.number 返回的链上值不匹配
 	SkipContractConfigConfirmations bool
 
-	// Polling interval at which ContractConfigTracker is queried for
-	// updated on-chain configurations. Recommended values are between
-	// fifteen seconds and two minutes.
+	// ContractConfigTracker 被查询以获取更新的链上配置的轮询间隔。建议的值在十五秒到两分钟之间。
 	ContractConfigTrackerPollInterval time.Duration
 
-	// Interval at which we try to establish a subscription on ContractConfigTracker
-	// if one doesn't exist. Recommended values are between two and five minutes.
+	// 如果 ContractConfigTracker 订阅不存在，则尝试建立订阅的间隔。建议的值在两到五分钟之间。
 	ContractConfigTrackerSubscribeInterval time.Duration
 
-	// Timeout for ContractTransmitter.Transmit calls.
+	// ContractTransmitter.Transmit 调用的超时时间。
 	ContractTransmitterTransmitTimeout time.Duration
 
-	// Timeout for database interactions.
-	// (This is necessary because an oracle's operations are serialized, so
-	// blocking forever on an observation would break the oracle.)
+	// 数据库交互的超时时间。
+	// （这是必要的，因为 Oracle 的操作是串行的，因此在观察上永远阻塞将会破坏 Oracle）
 	DatabaseTimeout time.Duration
 
-	// Timeout for making observations using the DataSource.Observe method.
-	// (This is necessary because an oracle's operations are serialized, so
-	// blocking forever on an observation would break the oracle.)
+	// 使用 DataSource.Observe 方法进行观察时的超时时间。
+	// （这是必要的，因为 Oracle 的操作是串行的，因此在观察上永远阻塞将会破坏 Oracle）
 	DataSourceTimeout time.Duration
 
-	// After DataSourceTimeout expires, we additionally wait for this grace
-	// period for DataSource.Observe to return a result, before forcibly moving
-	// on.
+	// 在 DataSourceTimeout 过期后，我们还会等待这个优雅期，等待 DataSource.Observe 返回结果，然后强制继续。
 	DataSourceGracePeriod time.Duration
 
-	// DANGER, this turns off all kinds of sanity checks. May be useful for testing.
-	// Set this to EnableDangerousDevelopmentMode to turn on dev mode.
+	// DANGER，这会关闭所有类型的健全性检查。 可能对测试有用。
+	// 将此设置为 EnableDangerousDevelopmentMode 以开启开发模式。
 	DevelopmentMode string
 }

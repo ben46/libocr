@@ -128,9 +128,7 @@ func (mb *managedBootstrapNodeState) configChanged(cc types.ContractConfig) {
 			"error":           err,
 			"configDigest":    mb.config.ConfigDigest,
 			"peerIDs":         peerIDs,
-			"v2boot
-
-strappers": mb.v2bootstrappers,
+			"v2boot strappers": mb.v2bootstrappers,
 		})
 		return
 	}

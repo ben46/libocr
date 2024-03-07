@@ -10,67 +10,57 @@ import "./OffchainAggregatorBilling.sol";
 import "./TypeAndVersionInterface.sol";
 
 /**
-  * @notice Onchain verification of reports from the offchain reporting protocol
+  * @notice 离链报告协议的在链验证
 
-  * @dev For details on its operation, see the offchain reporting protocol design
-  * @dev doc, which refers to this contract as simply the "contract".
+  * @dev 有关其操作的详细信息，请参见离链报告协议设计
+  * @dev 文档，该协议将此合约简称为“contract”。
 */
 contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3Interface, TypeAndVersionInterface {
 
+  // 最大uint32
   uint256 constant private maxUint32 = (1 << 32) - 1;
 
-  // Storing these fields used on the hot path in a HotVars variable reduces the
-  // retrieval of all of them to a single SLOAD. If any further fields are
-  // added, make sure that storage of the struct still takes at most 32 bytes.
+  // 存储热路径中使用的这些字段在HotVars变量中可以将它们的检索减少为单个SLOAD。如果添加了任何其他字段，请确保结构的存储仍然最多占用32个字节。
   struct HotVars {
-    // Provides 128 bits of security against 2nd pre-image attacks, but only
-    // 64 bits against collisions. This is acceptable, since a malicious owner has
-    // easier way of messing up the protocol than to find hash collisions.
+    // 对2次预图像攻击提供128位安全性，但只对碰撞提供64位安全性。这是可以接受的，因为恶意所有者更容易破坏协议而不是找到哈希碰撞。
     bytes16 latestConfigDigest;
-    uint40 latestEpochAndRound; // 32 most sig bits for epoch, 8 least sig bits for round
-    // Current bound assumed on number of faulty/dishonest oracles participating
-    // in the protocol, this value is referred to as f in the design
+    uint40 latestEpochAndRound; // 32个最重要的位用于epoch，8个最不重要的位用于round
+    // 在参与协议中假设的当前边界上存储故障/不诚实的预言机的数量，该值在设计中被称为f
     uint8 threshold;
-    // Chainlink Aggregators expose a roundId to consumers. The offchain reporting
-    // protocol does not use this id anywhere. We increment it whenever a new
-    // transmission is made to provide callers with contiguous ids for successive
-    // reports.
+    // Chainlink聚合器向使用者暴露一个roundId。离链报告协议在任何地方都不使用此id。我们在进行新的传输时递增它，以为连续的报告提供连续的ids。
     uint32 latestAggregatorRoundId;
   }
   HotVars internal s_hotVars;
 
-  // Transmission records the median answer from the transmit transaction at
-  // time timestamp
+  // 传输记录了来自传输事务的中位数答案和时间戳
   struct Transmission {
-    int192 answer; // 192 bits ought to be enough for anyone
+    int192 answer; // 192位应该足够
     uint64 timestamp;
   }
-  mapping(uint32 /* aggregator round ID */ => Transmission) internal s_transmissions;
+  mapping(uint32 /* 聚合器轮次ID */ => Transmission) internal s_transmissions;
 
-  // incremented each time a new config is posted. This count is incorporated
-  // into the config digest, to prevent replay attacks.
+  // 每次发布新配置时递增。此计数包含在配置摘要中，以防止重播攻击。
   uint32 internal s_configCount;
-  uint32 internal s_latestConfigBlockNumber; // makes it easier for offchain systems
-                                             // to extract config from logs.
+  uint32 internal s_latestConfigBlockNumber; // 方便离链系统从日志中提取配置。
 
-  // Lowest answer the system is allowed to report in response to transmissions
+  // 系统允许的最低答案，用于响应传输的报告
   int192 immutable public minAnswer;
-  // Highest answer the system is allowed to report in response to transmissions
+  // 系统允许的最高答案，用于响应传输的报告
   int192 immutable public maxAnswer;
 
   /*
-   * @param _maximumGasPrice highest gas price for which transmitter will be compensated
-   * @param _reasonableGasPrice transmitter will receive reward for gas prices under this value
-   * @param _microLinkPerEth reimbursement per ETH of gas cost, in 1e-6LINK units
-   * @param _linkGweiPerObservation reward to oracle for contributing an observation to a successfully transmitted report, in 1e-9LINK units
-   * @param _linkGweiPerTransmission reward to transmitter of a successful report, in 1e-9LINK units
-   * @param _link address of the LINK contract
-   * @param _minAnswer lowest answer the median of a report is allowed to be
-   * @param _maxAnswer highest answer the median of a report is allowed to be
-   * @param _billingAccessController access controller for billing admin functions
-   * @param _requesterAccessController access controller for requesting new rounds
-   * @param _decimals answers are stored in fixed-point format, with this many digits of precision
-   * @param _description short human-readable description of observable this contract's answers pertain to
+   * @param _maximumGasPrice 负责人将获得报酬的最高燃气价格
+   * @param _reasonableGasPrice 传输者将获得报酬的燃气价格
+   * @param _microLinkPerEth 每ETH的燃气费用补偿，以1e-6LINK为单位
+   * @param _linkGweiPerObservation 奖励预言机为成功传输的报告提供的观察的LINK奖励，以1e-9LINK为单位
+   * @param _linkGweiPerTransmission 奖励成功报告的传输者的LINK奖励，以1e-9LINK为单位
+   * @param _link LINK合约的地址
+   * @param _minAnswer 报告中位数允许的最低答案
+   * @param _maxAnswer 报告中位数允许的最高答案
+   * @param _billingAccessController 账单管理功能的访问控制器
+   * @param _requesterAccessController 请求新轮次的访问控制器
+   * @param _decimals 答案以固定点格式存储，精度为多少位
+   * @param _description 与此合约的答案相关的可观察事物的简短人类可读描述
    */
   constructor(
     uint32 _maximumGasPrice,
@@ -100,7 +90,7 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /*
-   * Versioning
+   * 版本控制
    */
   function typeAndVersion()
     external
@@ -113,18 +103,18 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /*
-   * Config logic
+   * 配置逻辑
    */
 
   /**
-   * @notice triggers a new run of the offchain reporting protocol
-   * @param previousConfigBlockNumber block in which the previous config was set, to simplify historic analysis
-   * @param configCount ordinal number of this config setting among all config settings over the life of this contract
-   * @param signers ith element is address ith oracle uses to sign a report
-   * @param transmitters ith element is address ith oracle uses to transmit a report via the transmit method
-   * @param threshold maximum number of faulty/dishonest oracles the protocol can tolerate while still working correctly
-   * @param encodedConfigVersion version of the serialization format used for "encoded" parameter
-   * @param encoded serialized data used by oracles to configure their offchain operation
+   * @notice 触发离链报告协议的新运行
+   * @param previousConfigBlockNumber 设置前配置的块，以简化历史分析
+   * @param configCount 在该合约的所有配置设置的生命周期中，此配置设置的序号
+   * @param signers ith元素是第i个预言机用于签署报告的地址
+   * @param transmitters ith元素是第i个预言机用于通过传输方法传输报告的地址
+   * @param threshold 协议在正确工作时可以容忍的最大故障/不诚实的预言机数量
+   * @param encodedConfigVersion 用于“encoded”参数的序列化格式的版本
+   * @param encoded 用于配置预言机离链操作的序列化数据
    */
   event ConfigSet(
     uint32 previousConfigBlockNumber,
@@ -136,7 +126,7 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
     bytes encoded
   );
 
-  // Reverts transaction if config args are invalid
+  // 如果配置参数无效，则还原事务
   modifier checkConfigValid (
     uint256 _numSigners, uint256 _numTransmitters, uint256 _threshold
   ) {
@@ -151,12 +141,12 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice sets offchain reporting protocol configuration incl. participating oracles
-   * @param _signers addresses with which oracles sign the reports
-   * @param _transmitters addresses oracles use to transmit the reports
-   * @param _threshold number of faulty oracles the system can tolerate
-   * @param _encodedConfigVersion version number for offchainEncoding schema
-   * @param _encoded encoded off-chain oracle configuration
+   * @notice 设置离链报告协议配置，包括参与预言机
+   * @param _signers 预言机用于签署报告的地址
+   * @param _transmitters 预言机用于传输报告的地址
+   * @param _threshold 系统可以容忍的最大故障预言机数量
+   * @param _encodedConfigVersion offchainEncoding模式的版本号
+   * @param _encoded offchain配置的序列化数据
    */
   function setConfig(
     address[] calldata _signers,
@@ -169,7 +159,7 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
     checkConfigValid(_signers.length, _transmitters.length, _threshold)
     onlyOwner()
   {
-    while (s_signers.length != 0) { // remove any old signer/transmitter addresses
+    while (s_signers.length != 0) { // 删除任何旧的签署者/传输者地址
       uint lastIdx = s_signers.length - 1;
       address signer = s_signers[lastIdx];
       address transmitter = s_transmitters[lastIdx];
@@ -180,7 +170,7 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
       s_transmitters.pop();
     }
 
-    for (uint i = 0; i < _signers.length; i++) { // add new signer/transmitter addresses
+    for (uint i = 0; i < _signers.length; i++) { // 添加新的签署者/传输者地址
       require(
         s_oracles[_signers[i]].role == Role.Unset,
         "repeated signer address"
@@ -238,11 +228,11 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice information about current offchain reporting protocol configuration
+   * @notice 当前离链报告协议配置的信息
 
-   * @return configCount ordinal number of current config, out of all configs applied to this contract so far
-   * @return blockNumber block at which this config was set
-   * @return configDigest domain-separation tag for current config (see configDigestFromConfigData)
+   * @return configCount 当前配置的序号，是此合约到目前为止应用的所有配置中的序号
+   * @return blockNumber 设置此配置的块
+   * @return configDigest 当前配置的域分离标记（参见configDigestFromConfigData）
    */
   function latestConfigDetails()
     external
@@ -257,9 +247,9 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @return list of addresses permitted to transmit reports to this contract
+   * @return 允许向此合约传输报告的地址列表
 
-   * @dev The list will match the order used to specify the transmitter during setConfig
+   * @dev 列表将与在setConfig期间指定的顺序匹配传输者
    */
   function transmitters()
     external
@@ -270,10 +260,10 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /*
-   * On-chain validation logc
+   * 在链验证逻辑
    */
 
-  // Configuration for validator
+  // 验证者的配置
   struct ValidatorConfig {
     AggregatorValidatorInterface validator;
     uint32 gasLimit;
@@ -281,11 +271,11 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   ValidatorConfig private s_validatorConfig;
 
   /**
-   * @notice indicates that the validator configuration has been set
-   * @param previousValidator previous validator contract
-   * @param previousGasLimit previous gas limit for validate calls
-   * @param currentValidator current validator contract
-   * @param currentGasLimit current gas limit for validate calls
+   * @notice 表明已设置验证者配置
+   * @param previousValidator 先前的验证者合约
+   * @param previousGasLimit 先前的验证调用的燃气限制
+   * @param currentValidator 当前的验证者合约
+   * @param currentGasLimit 当前验证调用的燃气限制
    */
   event ValidatorConfigSet(
     AggregatorValidatorInterface indexed previousValidator,
@@ -295,9 +285,9 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   );
 
   /**
-   * @notice validator configuration
-   * @return validator validator contract
-   * @return gasLimit gas limit for validate calls
+   * @notice 验证者配置
+   * @return validator 验证者合约
+   * @return gasLimit 验证调用的燃气限制
    */
   function validatorConfig()
     external
@@ -309,10 +299,10 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice sets validator configuration
-   * @dev set _newValidator to 0x0 to disable validate calls
-   * @param _newValidator address of the new validator contract
-   * @param _newGasLimit new gas limit for validate calls
+   * @notice 设置验证者配置
+   * @dev 将_newValidator设置为0x0以禁用验证调用
+   * @param _newValidator 新验证者合约的地址
+   * @param _newGasLimit 验证调用的新燃气限制
    */
   function setValidatorConfig(AggregatorValidatorInterface _newValidator, uint32 _newGasLimit)
     public
@@ -363,8 +353,7 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   uint256 private constant CALL_WITH_EXACT_GAS_CUSHION = 5_000;
 
   /**
-   * @dev calls target address with exactly gasAmount gas and data as calldata
-   * or reverts if at least gasAmount gas is not available.
+   * @dev 使用恰好为gasAmount的燃气和数据作为calldata调用目标地址，否则将恢复，如果至少有gasAmount的燃气可用。 (up to gas-block limit)
    */
   function callWithExactGasEvenIfTargetIsNoContract(
     uint256 _gasAmount,
@@ -377,17 +366,12 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
     // solhint-disable-next-line no-inline-assembly
     assembly {
       let g := gas()
-      // Compute g -= CALL_WITH_EXACT_GAS_CUSHION and check for underflow. We
-      // need the cushion since the logic following the above call to gas also
-      // costs gas which we cannot account for exactly. So cushion is a
-      // conservative upper bound for the cost of this logic.
+      // 计算 g -= CALL_WITH_EXACT_GAS_CUSHION，并检查下溢。我们需要这个缓冲区，因为在调用gas后面的逻辑时，也会产生燃气，我们无法准确地计算它的成本。因此，缓冲区是这个逻辑成本的保守上限。
       if iszero(lt(g, CALL_WITH_EXACT_GAS_CUSHION)) {
         g := sub(g, CALL_WITH_EXACT_GAS_CUSHION)
-        // If g - g//64 <= _gasAmount, we don't have enough gas. (We subtract g//64
-        // because of EIP-150.)
+        // 如果 g - g//64 <= _gasAmount，则我们没有足够的燃气。(我们减去g//64是因为EIP-150。)
         if gt(sub(g, div(g, 64)), _gasAmount) {
-          // Call and ignore success/return data. Note that we did not check
-          // whether a contract actually exists at the _target address.
+          // 调用并忽略成功/返回数据。请注意，我们没有检查合约是否实际上存在于_target地址。
           pop(call(_gasAmount, _target, 0, add(_data, 0x20), mload(_data), 0, 0))
           sufficientGas := true
         }
@@ -396,30 +380,30 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /*
-   * requestNewRound logic
+   * 请求新轮次逻辑
    */
 
   AccessControllerInterface internal s_requesterAccessController;
 
   /**
-   * @notice emitted when a new requester access controller contract is set
-   * @param old the address prior to the current setting
-   * @param current the address of the new access controller contract
+   * @notice 当新请求者访问控制器合约设置时发出
+   * @param old 当前设置之前的地址
+   * @param current 新的访问控制器合约地址
    */
   event RequesterAccessControllerSet(AccessControllerInterface old, AccessControllerInterface current);
 
   /**
-   * @notice emitted to immediately request a new round
-   * @param requester the address of the requester
-   * @param configDigest the latest transmission's configDigest
-   * @param epoch the latest transmission's epoch
-   * @param round the latest transmission's round
+   * @notice 在立即请求新轮次时发出
+   * @param requester 请求者地址
+   * @param configDigest 最新传输的configDigest
+   * @param epoch 最新传输的epoch
+   * @param round 最新传输的round
    */
   event RoundRequested(address indexed requester, bytes16 configDigest, uint32 epoch, uint8 round);
 
   /**
-   * @notice address of the requester access controller contract
-   * @return requester access controller address
+   * @notice 请求者访问控制器合约地址
+   * @return requester访问控制器地址
    */
   function requesterAccessController()
     external
@@ -430,8 +414,8 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice sets the requester access controller
-   * @param _requesterAccessController designates the address of the new requester access controller
+   * @notice 设置请求者访问控制器
+   * @param _requesterAccessController 指定新请求者访问控制器的地址
    */
   function setRequesterAccessController(AccessControllerInterface _requesterAccessController)
     public
@@ -445,10 +429,8 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice immediately requests a new round
-   * @return the aggregatorRoundId of the next round. Note: The report for this round may have been
-   * transmitted (but not yet mined) *before* requestNewRound() was even called. There is *no*
-   * guarantee of causality between the request and the report at aggregatorRoundId.
+   * @notice 立即请求新轮次
+   * @return 下一轮的聚合器轮次ID。注意：在调用requestNewRound()之前，该轮的报告可能已经被传输（但尚未被挖掘）。无法保证请求和聚合器RoundId之间的因果关系。
    */
   function requestNewRound() external returns (uint80) {
     require(msg.sender == owner || s_requesterAccessController.hasAccess(msg.sender, msg.data),
@@ -466,16 +448,16 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /*
-   * Transmission logic
+   * 传输逻辑
    */
 
   /**
-   * @notice indicates that a new report was transmitted
-   * @param aggregatorRoundId the round to which this report was assigned
-   * @param answer median of the observations attached this report
-   * @param transmitter address from which the report was transmitted
-   * @param observations observations transmitted with this report
-   * @param rawReportContext signature-replay-prevention domain-separation tag
+   * @notice 表明已传输新报告
+   * @param aggregatorRoundId 分配给此报告的轮次
+   * @param answer 与此报告一起传输的中位数答案
+   * @param transmitter 传输报告的地址
+   * @param observations 与此报告一起传输的观察
+   * @param rawReportContext 签名回放预防域分离标记
    */
   event NewTransmission(
     uint32 indexed aggregatorRoundId,
@@ -486,8 +468,7 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
     bytes32 rawReportContext
   );
 
-  // decodeReport is used to check that the solidity and go code are using the
-  // same format. See TestOffchainAggregator.testDecodeReport and TestReportParsing
+  // 解码报告用于检查Solidity和Go代码是否使用相同的格式。请参阅TestOffchainAggregator.testDecodeReport和TestReportParsing
   function decodeReport(bytes memory _report)
     internal
     pure
@@ -501,23 +482,23 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
       (bytes32, bytes32, int192[]));
   }
 
-  // Used to relieve stack pressure in transmit
+  // 在传输中减轻堆栈压力
   struct ReportData {
-    HotVars hotVars; // Only read from storage once
-    bytes observers; // ith element is the index of the ith observer
-    int192[] observations; // ith element is the ith observation
-    bytes vs; // jth element is the v component of the jth signature
+    HotVars hotVars; // 仅从存储中读取一次
+    bytes observers; // ith元素是第i个观察者的索引
+    int192[] observations; // ith元素是第i个观察的值
+    bytes vs; // jth元素是第j个签名的v分量
     bytes32 rawReportContext;
   }
 
   /*
-   * @notice details about the most recent report
+   * @notice 最新报告的详细信息
 
-   * @return configDigest domain separation tag for the latest report
-   * @return epoch epoch in which the latest report was generated
-   * @return round OCR round in which the latest report was generated
-   * @return latestAnswer median value from latest report
-   * @return latestTimestamp when the latest report was transmitted
+   * @return configDigest 最新报告的域分隔标记
+   * @return epoch 生成最新报告的时期
+   * @return round OCR中生成最新报告的轮次
+   * @return latestAnswer 最新报告的中位数值
+   * @return latestTimestamp 传输最新报告时的时间戳
    */
   function latestTransmissionDetails()
     external
@@ -540,71 +521,65 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
     );
   }
 
-  // The constant-length components of the msg.data sent to transmit.
-  // See the "If we wanted to call sam" example on for example reasoning
+  // 传输消息数据的常量长度组件。
+  // 有关示例推理的详细信息，请参见“如果我们想叫Sam”的示例
   // https://solidity.readthedocs.io/en/v0.7.2/abi-spec.html
   uint16 private constant TRANSMIT_MSGDATA_CONSTANT_LENGTH_COMPONENT =
-    4 + // function selector
-    32 + // word containing start location of abiencoded _report value
-    32 + // word containing location start of abiencoded  _rs value
-    32 + // word containing start location of abiencoded _ss value
-    32 + // _rawVs value
-    32 + // word containing length of _report
-    32 + // word containing length _rs
-    32 + // word containing length of _ss
-    0; // placeholder
+    4 + // 功能选择器
+    32 + // abiencoded _report值的起始位置的单词
+    32 + // abiencoded _rs起始位置的单词
+    32 + // abiencoded _ss起始位置的单词
+    32 + // _rawVs的值
+    32 + // abiencoded _report长度的单词
+    32 + // abiencoded _rs长度的单词
+    32 + // abiencoded _ss长度的单词
+    0; // 占位符
 
   function expectedMsgDataLength(
     bytes calldata _report, bytes32[] calldata _rs, bytes32[] calldata _ss
   ) private pure returns (uint256 length)
   {
-    // calldata will never be big enough to make this overflow
+    // calldata永远不会足够大而导致溢出
     return uint256(TRANSMIT_MSGDATA_CONSTANT_LENGTH_COMPONENT) +
-      _report.length + // one byte pure entry in _report
-      _rs.length * 32 + // 32 bytes per entry in _rs
-      _ss.length * 32 + // 32 bytes per entry in _ss
-      0; // placeholder
+      _report.length + // _report的一个字节纯输入
+      _rs.length * 32 + // _rs中每个条目的32个字节
+      _ss.length * 32 + // _ss中每个条目的32个字节
+      0; // 占位符
   }
 
   /**
-   * @notice transmit is called to post a new report to the contract
-   * @param _report serialized report, which the signatures are signing. See parsing code below for format. The ith element of the observers component must be the index in s_signers of the address for the ith signature
-   * @param _rs ith element is the R components of the ith signature on report. Must have at most maxNumOracles entries
-   * @param _ss ith element is the S components of the ith signature on report. Must have at most maxNumOracles entries
-   * @param _rawVs ith element is the the V component of the ith signature
+   * @notice 用于将新报告发布到合约的调用传输
+   * @param _report 序列化报告，签名对其进行签名。请参见下面的解析代码以了解格式。观察者组件的第i个元素必须是第i个签名的地址在s_signers中的索引
+   * @param _rs 第i个元素是在报告上的第i个签名的R成分。最多可以有maxNumOracles个条目
+   * @param _ss 第i个元素是在报告上的第i个签名的S成分。最多可以有maxNumOracles个条目
+   * @param _rawVs 第i个元素是第i个签名的V成分
    */
   function transmit(
-    // NOTE: If these parameters are changed, expectedMsgDataLength and/or
-    // TRANSMIT_MSGDATA_CONSTANT_LENGTH_COMPONENT need to be changed accordingly
+    // 如果更改了这些参数，则需要相应地更改expectedMsgDataLength和/或TRANSMIT_MSGDATA_CONSTANT_LENGTH_COMPONENT
     bytes calldata _report,
-    bytes32[] calldata _rs, bytes32[] calldata _ss, bytes32 _rawVs // signatures
+    bytes32[] calldata _rs, bytes32[] calldata _ss, bytes32 _rawVs // 签名
   )
     external
   {
-    uint256 initialGas = gasleft(); // This line must come first
-    // Make sure the transmit message-length matches the inputs. Otherwise, the
-    // transmitter could append an arbitrarily long (up to gas-block limit)
-    // string of 0 bytes, which we would reimburse at a rate of 16 gas/byte, but
-    // which would only cost the transmitter 4 gas/byte. (Appendix G of the
-    // yellow paper, p. 25, for G_txdatazero and EIP 2028 for G_txdatanonzero.)
-    // This could amount to reimbursement profit of 36 million gas, given a 3MB
-    // zero tail.
+    uint256 initialGas = gasleft(); // 此行必须最先执行
+    // 确保传输消息长度与输入匹配。否则，传输者可以追加任意长（最高为gas-block限制）的0字节字符串，我们将以16 gas/byte的价格补偿它，但是只会让传输者以4 gas/byte的价格支付。 （黄皮书的附录G第25页的Appendix G，以及EIP 2028的G_txdatanonzero和G_txdatanonzero）。
+    // 这可能导致3600万gas的补偿利润，给出了3MB的零尾。
     require(msg.data.length == expectedMsgDataLength(_report, _rs, _ss),
       "transmit message too long");
-    ReportData memory r; // Relieves stack pressure
+    ReportData memory r; // 减轻堆栈压力
     {
-      r.hotVars = s_hotVars; // cache read from storage
+      r.hotVars = s_hotVars; // 从存储中缓存读取
 
       bytes32 rawObservers;
       (r.rawReportContext, rawObservers, r.observations) = abi.decode(
         _report, (bytes32, bytes32, int192[])
       );
 
-      // rawReportContext consists of:
-      // 11-byte zero padding
-      // 16-byte configDigest
-      // 4-byte epoch
-      // 1-byte round
+      // rawReportContext包含：
+      // 11个字节的零填充
+      // 16字节的configDigest
+      // 4个字节的epoch
+      // 1个字节的round
 
       bytes16 configDigest = bytes16(r.rawReportContext << 88);
       require(
@@ -614,12 +589,11 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
 
       uint40 epochAndRound = uint40(uint256(r.rawReportContext));
 
-      // direct numerical comparison works here, because
+      // 直接数字比较在这里起作用，因为
       //
-      //   ((e,r) <= (e',r')) implies (epochAndRound <= epochAndRound')
+      //   ((e,r) <= (e',r'))则意味着（epochAndRound <= epochAndRound'）
       //
-      // because alphabetic ordering implies e <= e', and if e = e', then r<=r',
-      // so e*256+r <= e'*256+r', because r, r' < 256
+      // 因为字母顺序意味着e <= e'，如果e = e'，那么r<=r'，所以e*256+r <= e'*256+r'，因为r、r' <256
       require(r.hotVars.latestEpochAndRound < epochAndRound, "stale report");
 
       require(_rs.length > r.hotVars.threshold, "not enough signatures");
@@ -630,13 +604,13 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
       require(r.observations.length > 2 * r.hotVars.threshold,
               "too few values to trust median");
 
-      // Copy signature parities in bytes32 _rawVs to bytes r.v
+      // 将bytes32 _rawVs中的签名奇偶性复制到bytes r.v
       r.vs = new bytes(_rs.length);
       for (uint8 i = 0; i < _rs.length; i++) {
         r.vs[i] = _rawVs[i];
       }
 
-      // Copy observer identities in bytes32 rawObservers to bytes r.observers
+      // 将bytes32 rawObservers中的观察者标识复制到bytes r.observers
       r.observers = new bytes(r.observations.length);
       bool[maxNumOracles] memory seen;
       for (uint8 i = 0; i < r.observations.length; i++) {
@@ -647,17 +621,16 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
       }
 
       Oracle memory transmitter = s_oracles[msg.sender];
-      require( // Check that sender is authorized to report
+      require( // 检查发送者是否有权限报告
         transmitter.role == Role.Transmitter &&
         msg.sender == s_transmitters[transmitter.index],
         "unauthorized transmitter"
       );
-      // record epochAndRound here, so that we don't have to carry the local
-      // variable in transmit. The change is reverted if something fails later.
+      // 记录epochAndRound，以便我们不必在传输中传递本地变量。如果之后发生错误，则更改将被还原。
       r.hotVars.latestEpochAndRound = epochAndRound;
     }
 
-    { // Verify signatures attached to report
+    { // 验证附加到报告的签名
       bytes32 h = keccak256(_report);
       bool[maxNumOracles] memory signed;
 
@@ -671,7 +644,7 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
       }
     }
 
-    { // Check the report contents, and record the result
+    { // 检查报告内容，并记录结果
       for (uint i = 0; i < r.observations.length - 1; i++) {
         bool inOrder = r.observations[i] <= r.observations[i+1];
         require(inOrder, "observations not sorted");
@@ -691,11 +664,11 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
         r.observers,
         r.rawReportContext
       );
-      // Emit these for backwards compatability with offchain consumers
-      // that only support legacy events
+      // 用于与只支持旧事件的离线消费者的向后兼容性
+      // 只支持旧事件
       emit NewRound(
         r.hotVars.latestAggregatorRoundId,
-        address(0x0), // use zero address since we don't have anybody "starting" the round here
+        address(0x0), // 使用零地址，因为我们没有任何人在这里“开始”这一轮
         block.timestamp
       );
       emit AnswerUpdated(
@@ -712,11 +685,11 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /*
-   * v2 Aggregator interface
+   * v2 Aggregator接口
    */
 
   /**
-   * @notice median from the most recent report
+   * @notice 最新报告的中位数
    */
   function latestAnswer()
     public
@@ -729,7 +702,7 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice timestamp of block in which last report was transmitted
+   * @notice 上次报告被传输的块的时间戳
    */
   function latestTimestamp()
     public
@@ -742,7 +715,7 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice Aggregator round (NOT OCR round) in which last report was transmitted
+   * @notice 最新报告的聚合器轮次（而不是OCR轮次）
    */
   function latestRound()
     public
@@ -755,8 +728,8 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice median of report from given aggregator round (NOT OCR round)
-   * @param _roundId the aggregator round of the target report
+   * @notice 报告从给定聚合器轮次（而不是OCR轮次）获取的中位数
+   * @param _roundId 目标报告的聚合器轮次
    */
   function getAnswer(uint256 _roundId)
     public
@@ -770,8 +743,8 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice timestamp of block in which report from given aggregator round was transmitted
-   * @param _roundId aggregator round (NOT OCR round) of target report
+   * @notice 报告从给定聚合器轮次获取的块的时间戳
+   * @param _roundId 目标报告的聚合器轮次
    */
   function getTimestamp(uint256 _roundId)
     public
@@ -785,25 +758,25 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /*
-   * v3 Aggregator interface
+   * v3 Aggregator接口
    */
 
   string constant private V3_NO_DATA_ERROR = "No data present";
 
   /**
-   * @return answers are stored in fixed-point format, with this many digits of precision
+   * @return 固定点格式存储答案，精度为多少位
    */
   uint8 immutable public override decimals;
 
   /**
-   * @notice aggregator contract version
+   * @notice 聚合器合约版本
    */
   uint256 constant public override version = 4;
 
   string internal s_description;
 
   /**
-   * @notice human-readable description of observable this contract is reporting on
+   * @notice 可观察事物的人类可读描述
    */
   function description()
     public
@@ -816,12 +789,12 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice details for the given aggregator round
-   * @param _roundId target aggregator round (NOT OCR round). Must fit in uint32
+   * @notice 给定聚合器轮次的聚合器详细信息
+   * @param _roundId 目标聚合器轮次（而不是OCR轮次）。必须适应uint32
    * @return roundId _roundId
-   * @return answer median of report from given _roundId
-   * @return startedAt timestamp of block in which report from given _roundId was transmitted
-   * @return updatedAt timestamp of block in which report from given _roundId was transmitted
+   * @return answer 来自给定_roundId的报告的中位数
+   * @return startedAt 包含给定_roundId的报告的块的时间戳
+   * @return updatedAt 包含给定_roundId的报告的块的时间戳
    * @return answeredInRound _roundId
    */
   function getRoundData(uint80 _roundId)
@@ -849,12 +822,12 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   }
 
   /**
-   * @notice aggregator details for the most recently transmitted report
-   * @return roundId aggregator round of latest report (NOT OCR round)
-   * @return answer median of latest report
-   * @return startedAt timestamp of block containing latest report
-   * @return updatedAt timestamp of block containing latest report
-   * @return answeredInRound aggregator round of latest report
+   * @notice 最新传输的报告的聚合器详细信息
+   * @return roundId 最新报告的聚合器轮次（而不是OCR轮次）
+   * @return answer 最新报告的中位数
+   * @return startedAt 包含最新报告的块的时间戳
+   * @return updatedAt 包含最新报告的块的时间戳
+   * @return answeredInRound 最新报告的聚合器轮次
    */
   function latestRoundData()
     public
@@ -871,7 +844,8 @@ contract OffchainAggregator is Owned, OffchainAggregatorBilling, AggregatorV2V3I
   {
     roundId = s_hotVars.latestAggregatorRoundId;
 
-    // Skipped for compatability with existing FluxAggregator in which latestRoundData never reverts.
+    // 与现有FluxAggregator跳过以防止回滚的compatability
+    // 需要这一行
     // require(roundId != 0, V3_NO_DATA_ERROR);
 
     Transmission memory transmission = s_transmissions[uint32(roundId)];

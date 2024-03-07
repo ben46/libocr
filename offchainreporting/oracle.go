@@ -1,3 +1,4 @@
+// Package offchainreporting 提供了运行离链报告协议的功能。
 package offchainreporting
 
 import (
@@ -13,47 +14,41 @@ import (
 	"github.com/smartcontractkit/libocr/subprocesses"
 )
 
-// OracleArgs contains the configuration and services a caller must provide, in
-// order to run the offchainreporting protocol.
+// OracleArgs 包含了调用者必须提供的配置和服务，以便运行离链报告协议。
 //
-// All fields are expected to be non-nil unless otherwise noted.
+// 除非另有说明，否则所有字段都应为非空。
 type OracleArgs struct {
-	// A factory for producing network endpoints. A network endpoints consists of
-	// networking methods a consumer must implement to allow a node to
-	// communicate with other participating nodes.
+	// 用于生成网络端点的工厂。网络端点包含了消费者必须实现的网络方法，以允许节点与其他参与节点通信。
 	BinaryNetworkEndpointFactory types.BinaryNetworkEndpointFactory
 
-	// V2Bootstrappers is the list of bootstrap node addresses and IDs for the v2 stack
+	// V2Bootstrappers 是 v2 栈的引导节点地址和 ID 列表
 	V2Bootstrappers []commontypes.BootstrapperLocator
 
-	// Enables locally overriding certain configuration parameters. This is
-	// useful for e.g. hibernation mode. This may be nil.
+	// 允许本地覆盖某些配置参数。例如，适用于休眠模式。可能为 nil。
 	ConfigOverrider types.ConfigOverrider
 
-	// Interfaces with the OffchainAggregator smart contract's transmission related logic
+	// 与 OffchainAggregator 智能合约的传输相关逻辑进行接口交互
 	ContractTransmitter types.ContractTransmitter
 
-	// Tracks configuration changes
+	// 跟踪配置更改
 	ContractConfigTracker types.ContractConfigTracker
 
-	// Database provides persistent storage
+	// 数据库提供持久化存储
 	Database types.Database
 
-	// Used to make observations of value the nodes are to come to consensus on
+	// 用于观察节点应就共识达成的值
 	Datasource types.DataSource
 
-	// LocalConfig contains oracle-specific configuration details which are not
-	// mandated by the on-chain configuration specification via OffchainAggregatoo.SetConfig
+	// LocalConfig 包含了与 Oracle 相关的配置详情，这些详情不受通过 OffchainAggregator.SetConfig 指定的链上配置规范的强制约束
 	LocalConfig types.LocalConfig
 
-	// Logger logs stuff
+	// Logger 用于记录各种信息
 	Logger commontypes.Logger
 
-	// Used to send logs to a monitor. This may be nil.
+	// 用于将日志发送到监视器。可能为 nil。
 	MonitoringEndpoint commontypes.MonitoringEndpoint
 
-	// PrivateKeys contains the secret keys needed for the OCR protocol, and methods
-	// which use those keys without exposing them to the rest of the application.
+	// PrivateKeys 包含了 OCR 协议所需的秘密密钥，以及使用这些密钥的方法，而不会将其暴露给应用程序的其他部分。
 	PrivateKeys types.PrivateKeys
 }
 
@@ -66,41 +61,34 @@ const (
 )
 
 type Oracle struct {
-	lock sync.Mutex
-
-	state oracleState
-
-	oracleArgs OracleArgs
-
-	// subprocesses tracks completion of all go routines on Oracle.Close()
+	lock         sync.Mutex
+	state        oracleState
+	oracleArgs   OracleArgs
 	subprocesses subprocesses.Subprocesses
-
-	// cancel sends a cancel message to all subprocesses, via a context.Context
-	cancel context.CancelFunc
+	cancel       context.CancelFunc
 }
 
-// NewOracle returns a newly initialized Oracle using the provided services
-// and configuration.
+// NewOracle 使用提供的服务和配置返回一个新初始化的 Oracle。
 func NewOracle(args OracleArgs) (*Oracle, error) {
 	if err := SanityCheckLocalConfig(args.LocalConfig); err != nil {
-		return nil, errors.Wrapf(err, "bad local config while creating new oracle")
+		return nil, errors.Wrapf(err, "创建新 Oracle 时出现错误的本地配置")
 	}
 	return &Oracle{
-		sync.Mutex{},
-		oracleStateUnstarted,
-		args,
-		subprocesses.Subprocesses{},
-		nil,
+		lock:         sync.Mutex{},
+		state:        oracleStateUnstarted,
+		oracleArgs:   args,
+		subprocesses: subprocesses.Subprocesses{},
+		cancel:       nil,
 	}, nil
 }
 
-// Start spins up a Oracle.
+// Start 启动 Oracle。
 func (o *Oracle) Start() error {
 	o.lock.Lock()
 	defer o.lock.Unlock()
 
 	if o.state != oracleStateUnstarted {
-		return fmt.Errorf("can only start Oracle once")
+		return fmt.Errorf("只能启动一次 Oracle")
 	}
 	o.state = oracleStateStarted
 
@@ -108,11 +96,11 @@ func (o *Oracle) Start() error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	o.cancel = cancel
+
 	o.subprocesses.Go(func() {
 		defer cancel()
 		managed.RunManagedOracle(
 			ctx,
-
 			o.oracleArgs.V2Bootstrappers,
 			o.oracleArgs.ConfigOverrider,
 			o.oracleArgs.ContractConfigTracker,
@@ -129,21 +117,22 @@ func (o *Oracle) Start() error {
 	return nil
 }
 
-// Close shuts down an oracle. Can safely be called multiple times.
+// Close 关闭 Oracle。可以安全地多次调用。
 func (o *Oracle) Close() error {
 	o.lock.Lock()
 	defer o.lock.Unlock()
 
 	if o.state != oracleStateStarted {
-		return fmt.Errorf("can only close a started Oracle")
+		return fmt.Errorf("只能关闭已启动的 Oracle")
 	}
 	o.state = oracleStateClosed
 
 	if o.cancel != nil {
 		o.cancel()
 	}
-	// Wait for all subprocesses to shut down, before shutting down other resources.
-	// (Wouldn't want anything to panic from attempting to use a closed resource.)
+
+	// 在关闭其他资源之前，等待所有子进程关闭。
+	// （不希望发生尝试使用已关闭资源而导致恐慌。）
 	o.subprocesses.Wait()
 	return nil
 }

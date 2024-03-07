@@ -12,11 +12,10 @@ import (
 
 const futureMessageBufferSize = 10 // big enough for a couple of full rounds of repgen protocol
 
-// RunOracle runs one oracle instance of the offchain reporting protocol and manages
-// the lifecycle of all underlying goroutines.
+// RunOracle 运行 offchain 报告协议的一个 Oracle 实例，并管理所有底层 goroutine 的生命周期。
 //
-// RunOracle runs forever until ctx is cancelled. It will only shut down
-// after all its sub-goroutines have exited.
+// RunOracle 会一直运行直到 ctx 被取消。只有在所有子 goroutine 退出后才会关闭。
+
 func RunOracle(
 	ctx context.Context,
 
@@ -74,12 +73,9 @@ type oracleState struct {
 	subprocesses            subprocesses.Subprocesses
 }
 
-// run ensures safe shutdown of the Oracle's "child routines",
-// (Pacemaker, ReportGeneration and Transmission) upon o.ctx.Done()
-// being closed.
+// run 确保在 o.ctx.Done() 被关闭时安全关闭 Oracle 的“子例程”（Pacemaker、ReportGeneration 和 Transmission）。
 //
-// Here is a graph of the various channels involved and what they
-// transport.
+// 这里是涉及的各种通道以及它们传输内容的图表。
 //
 //	    ┌─────────────epoch changes─────────────┐
 //	    ▼                                       │
@@ -93,19 +89,13 @@ type oracleState struct {
 //	│Transmission│◄──────reports───────────┤ReportGeneration│
 //	└────────────┘                         └────────────────┘
 //
-// All channels are unbuffered.
+// 所有通道都是无缓冲的。
 //
-// Once o.ctx.Done() is closed, the Oracle runloop will enter the
-// corresponding select case and no longer forward network messages
-// to Pacemaker and ReportGeneration. It will then cancel o.childCtx,
-// making all children exit. To prevent deadlocks, all channel sends and
-// receives in Oracle, Pacemaker, ReportGeneration, Transmission, etc...
-// are contained in select{} statements that also contain a case for context
-// cancellation.
+// 一旦 o.ctx.Done() 被关闭，Oracle 的运行循环将进入相应的 select case，并不再将网络消息转发给 Pacemaker 和 ReportGeneration。
+// 然后将取消 o.childCtx，使所有子例程退出。
+// 为了防止死锁，在 Oracle、Pacemaker、ReportGeneration、Transmission 等地方的所有通道发送和接收操作都包含在 select{} 语句中，同时还包含了一个用于取消上下文的 case。
 //
-// Finally, all sub-goroutines spawned in the protocol are attached to o.subprocesses
-// (with the exception of ReportGeneration which is explicitly managed by Pacemaker).
-// This enables us to wait for their completion before exiting.
+// 最后，在协议中生成的所有子 goroutine 都附加到 o.subprocesses（ReportGeneration 除外，它是由 Pacemaker 显式管理的）。这使我们能够在退出之前等待它们完成。
 func (o *oracleState) run() {
 	o.logger.Info("Running", nil)
 
