@@ -17,12 +17,25 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
+// 该代码文件是关于 off-chain reporting 协议中的 Pacemaker 功能的实现。Pacemaker 是用来跟踪状态和处理消息的，
+// 参与在链下报告协议中的 Oracle。主要有以下功能：
+// - 定义了用于持久状态的通道的容量为 256。
+// - 实现了 `RunPacemaker` 函数，启动 Pacemaker 状态机。
+// - 实现了 `makePacemakerState` 函数，用于创建 Pacemaker 的状态。
+// - 定义了 `pacemakerState` 结构体，包含了 Pacemaker 状态的各个属性和方法。
+// - 包括数据库状态恢复、新的 epoch 消息的发送、进行提案生成以及进行状态的持久化等功能。
+// - 具有一些内部事件处理函数，例如进度事件、新天数事件和改变领导者事件。
+// - 含有关于 Oracle 领袖的选择算法。
+// - 定义了几个自定义事件类型，用于在测试中发送事件来暂停和继续 Pacemaker 事件循环。
+
 // The capacity of the channel we use for persisting states. If more than this
 // many state updates are pending, we will begin to drop updates.
 const chPersistCapacity = 256
 
 // Pacemaker keeps track of the state and message handling for an oracle
 // participating in the off-chain reporting protocol
+// The RunPacemaker function in Go initializes and runs a pacemaker state with various input
+// parameters.
 func RunPacemaker(
 	ctx context.Context,
 	subprocesses *subprocesses.Subprocesses,
@@ -456,6 +469,9 @@ func (pace *pacemakerState) messageNewepoch(msg MessageNewEpoch, sender commonty
 	}
 }
 
+// The code provided is defining a method called `spawnReportGeneration` on a struct type
+// `pacemakerState` in the Go programming language. This method does not contain any implementation
+// details as it is represented by the placeholder `
 func (pace *pacemakerState) spawnReportGeneration() {
 	if pace.cancelReportGeneration != nil {
 		pace.cancelReportGeneration()
@@ -531,6 +547,8 @@ func (pace *pacemakerState) spawnReportGeneration() {
 }
 
 // sortedGreaterThan returns the *sorted* elements of xs which are greater than y
+// The function `sortedGreaterThan` takes a slice of uint32 values and a target value y, filters out
+// values greater than y, sorts the remaining values in ascending order, and returns the sorted slice.
 func sortedGreaterThan(xs []uint32, y uint32) (rv []uint32) {
 	for _, x := range xs {
 		if x > y {
@@ -542,6 +560,8 @@ func sortedGreaterThan(xs []uint32, y uint32) (rv []uint32) {
 }
 
 // Leader will produce an oracle id for the given epoch.
+// The Leader function generates a pseudo-random number using Keccak256 hashing and returns a value
+// within a specified range.
 func Leader(epoch uint32, n int, key [16]byte) (leader commontypes.OracleID) {
 	// No need for HMAC. Since we use Keccak256, prepending
 	// with key gives us a PRF already.
